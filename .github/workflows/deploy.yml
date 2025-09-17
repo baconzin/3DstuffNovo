@@ -1,8 +1,9 @@
-name: build-and-deploy
+name: Deploy Frontend
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -12,26 +13,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Node sem cache (não depende de yarn.lock)
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      # Instalar deps no frontend
       - name: Install deps (yarn)
         working-directory: frontend
-        run: yarn install --frozen-lockfile || yarn install
+        run: |
+          yarn install --frozen-lockfile || yarn install
 
-      # Build CRA/CRACO
       - name: Build (CRACO/CRA)
         working-directory: frontend
         run: yarn build
 
-      # Deploy do build para o HostGator via FTP
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
-::contentReference[oaicite:0]{index=0}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: frontend/build
+          server-dir: /
+          dangerous-clean-slate: true
+          exclude: |
+            **/.git*
+            **/.github*
+            **/node_modules/**
+            **/.DS_Store
