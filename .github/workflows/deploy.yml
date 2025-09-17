@@ -13,25 +13,25 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Usa Node 20 (necessário para react-router-dom 7.x)
+      # Necessário para react-router-dom 7.x
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Instala dependências na pasta do frontend
+      # Instala dependências na PASTA frontend
       - name: Install deps (yarn)
         working-directory: frontend
         run: |
           yarn install --non-interactive
 
-      # Build (usa seu script "craco build")
+      # Gera o build (pasta frontend/build)
       - name: Build (CRACO/CRA)
         working-directory: frontend
         run: |
           yarn build
 
-      # Faz o deploy dos arquivos gerados em frontend/build para a pasta do domínio no HostGator
+      # Envia SOMENTE o build para o HostGator
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -41,5 +41,4 @@ jobs:
           protocol: ftp
           local-dir: frontend/build/
           server-dir: /public_html/3dstuff.com.br/
-          # cuidado: apaga o que estiver no diretório remoto antes de enviar
           dangerous-clean-slate: true
