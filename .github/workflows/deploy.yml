@@ -1,58 +1,59 @@
 name: build-and-deploy
-
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-# Evita dois deploys rodando ao mesmo tempo
-concurrency:
-  group: deploy-3dstuff
-  cancel-in-progress: true
 
 jobs:
-  ftp-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    env:
-      # Se o seu site está na raiz do repositório, deixe "."
-      # Se estiver em outra pasta (ex.: "dist" ou "build"), troque aqui.
-      UPLOAD_DIR: .
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Deploy via FTP
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      # Se o build gerar "dist" (Vite):
+      - name: Deploy (Vite - dist)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          # SECRETS (configure em Settings > Secrets and variables > Actions)
-          # FTP_SERVER   = br150.hostgator.com.br
-          # FTP_USERNAME = deploy-3dstuff@3dstuff.com.br
-          # FTP_PASSWORD = (sua senha)
-          server:   ${{ secrets.FTP_SERVER }}
+          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-
-          # Deixa explícito que é FTP porta 21
-          protocol: ftp
+          protocol: ftps
           port: 21
-          timeout: 60000
-          passive: true
-
-          # Diretórios
-          local-dir:  ${{ env.UPLOAD_DIR }}/
-          # Como a conta FTP já "cai" em /home1/.../public_html/3dstuff.com.br,
-          # o destino no servidor deve ser a raiz "/"
-          server-dir: /
-
-          # Não enviar arquivos desnecessários
+          server-dir: public_html/3dstuff.com.br/
+          local-dir: frontend/dist
           exclude: |
             **/.git*
             **/.github/**
             **/node_modules/**
-            **/.DS_Store
-            **/README.md
-            **/LICENSE
+
+      # Se for CRA e o build gerar "build", troque o passo acima por este:
+      # - name: Deploy (CRA - build)
+      #   uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      #   with:
+      #     server: ${{ secrets.FTP_SERVER }}
+      #     username: ${{ secrets.FTP_USERNAME }}
+      #     password: ${{ secrets.FTP_PASSWORD }}
+      #     protocol: ftps
+      #     port: 21
+      #     server-dir: public_html/3dstuff.com.br/
+      #     local-dir: frontend/build
+      #     exclude: |
+      #       **/.git*
+      #       **/.github/**
+      #       **/node_modules/**
