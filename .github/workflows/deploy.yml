@@ -12,36 +12,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 20 + cache Yarn
+      # Node sem cache (não depende de yarn.lock)
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
 
+      # Instalar deps no frontend
       - name: Install deps (yarn)
         working-directory: frontend
         run: yarn install --frozen-lockfile || yarn install
 
+      # Build CRA/CRACO
       - name: Build (CRACO/CRA)
         working-directory: frontend
         run: yarn build
 
+      # Deploy do build para o HostGator via FTP
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
-          server: ${{ secrets.FTP_SERVER }}        # ex.: ftp.regulariza.agr.br
-          username: ${{ secrets.FTP_USERNAME }}    # ex.: deploy-3dstuff@3dstuff.com.br
-          password: ${{ secrets.FTP_PASSWORD }}
-          # a conta FTP já "chroota" em /public_html/3dstuff.com.br,
-          # então o destino aqui deve ser a RAIZ da conta:
-          server-dir: /
-          # envia a pasta de build do CRA
-          local-dir: frontend/build/
-          # opcional: zera antes de enviar (evita sobrar lixo)
-          dangerous-clean-slate: true
-          exclude: |
-            **/.git*
-            **/.github*
-            **/node_modules/**
-            **/.DS_Store
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+::contentReference[oaicite:0]{index=0}
