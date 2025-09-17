@@ -1,4 +1,4 @@
-name: deploy
+name: build-and-deploy
 
 on:
   push:
@@ -16,21 +16,20 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Use Node 18
+      - name: Use Node 18 + cache Yarn
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
 
-      - name: Install deps
-        run: npm ci
+      - name: Install deps (yarn)
+        run: yarn install --frozen-lockfile
 
       - name: Build (CRACO/CRA)
-        run: npm run build
+        run: yarn build
 
       - name: Deploy via FTP
-        # <<< ATENÇÃO: repositório e versão corretos
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server:   ${{ secrets.FTP_SERVER }}        # ex: ftp.regulariza.agr.br
@@ -38,5 +37,6 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
           port: 21
-          local-dir: frontend/build/                 # onde o CRA gera os arquivos
-          server-dir: /public_html/3dstuff.com.br/   # raiz do domínio no cPanel
+          # como defini 'working-directory: frontend', 'build/' já aponta para frontend/build
+          local-dir: build/
+          server-dir: /public_html/3dstuff.com.br/
