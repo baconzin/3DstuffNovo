@@ -13,16 +13,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Só instala Node se existir package.json
+      # Só configura Node se houver package.json na RAIZ
       - name: Setup Node
-        if: hashFiles('**/package.json') != ''
+        if: ${{ hashFiles('package.json') != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # Se existe lockfile -> npm ci, senão -> npm install
+      # Só instala deps se houver package.json na RAIZ
       - name: Install deps (lockfile-aware)
-        if: hashFiles('**/package.json') != ''
+        if: ${{ hashFiles('package.json') != '' }}
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
             npm ci
@@ -30,9 +30,9 @@ jobs:
             npm install --no-fund --no-audit
           fi
 
-      # Só tenta build se existir script "build"
+      # Só roda build se existir script "build"
       - name: Build (if script exists)
-        if: hashFiles('**/package.json') != ''
+        if: ${{ hashFiles('package.json') != '' }}
         run: |
           if npm run | grep -q " build"; then
             npm run build
@@ -40,7 +40,7 @@ jobs:
             echo "Sem script de build. Pulando etapa."
           fi
 
-      # Descobre pasta de saída padrão
+      # Descobre pasta de saída: dist > build > raiz
       - name: Detect output dir
         id: out
         run: |
@@ -56,11 +56,12 @@ jobs:
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}          # ex: br150.hostgator.com.br (recomendo usar o hostname do servidor)
-          username: ${{ secrets.FTP_USERNAME }}      # ex: deploy-3dstuff@3dstuff.com.br
+          # Recomendo usar o hostname do servidor para não depender da propagação do DNS
+          server: ${{ secrets.FTP_SERVER }}          # ex.: br150.hostgator.com.br
+          username: ${{ secrets.FTP_USERNAME }}      # ex.: deploy-3dstuff@3dstuff.com.br
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ${{ steps.out.outputs.dir }}/
-          server-dir: /                               # raiz do addon domain (public_html/3dstuff.com.br)
+          server-dir: /                               # raiz do addon, que mapeia para public_html/3dstuff.com.br
           exclude: |
             **/.git**
             **/.github/**
