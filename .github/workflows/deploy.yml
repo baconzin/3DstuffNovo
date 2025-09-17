@@ -2,48 +2,46 @@ name: build-and-deploy
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Node 20 (react-router-dom 7 exige >=20)
-      - name: Use Node 20
+      - name: Use Node 20 + cache Yarn
         uses: actions/setup-node@v4
         with:
-          node-version: '20'        # sem cache aqui, pra não gerar o erro do yarn.lock
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
 
-      - name: Install deps (yarn, com ou sem lockfile)
+      - name: Install deps (yarn)
         working-directory: frontend
-        shell: bash
-        run: |
-          corepack enable
-          if [ -f yarn.lock ]; then
-            echo "yarn.lock encontrado -> usando --frozen-lockfile"
-            yarn install --frozen-lockfile
-          else
-            echo "yarn.lock NÃO encontrado -> instalando normalmente"
-            yarn install
-          fi
+        run: yarn install --frozen-lockfile || yarn install
 
       - name: Build (CRACO/CRA)
         working-directory: frontend
         run: yarn build
 
       - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_SERVER }}        # ex.: ftp.regulariza.agr.br
           username: ${{ secrets.FTP_USERNAME }}    # ex.: deploy-3dstuff@3dstuff.com.br
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftp
-          port: 21
-          local-dir: frontend/build/               # saída do build do CRA
-          server-dir: /public_html/3dstuff.com.br/ # destino correto no cPanel
-          dangerous-clean-slate: true              # limpa destino antes de enviar
+          # a conta FTP já "chroota" em /public_html/3dstuff.com.br,
+          # então o destino aqui deve ser a RAIZ da conta:
+          server-dir: /
+          # envia a pasta de build do CRA
+          local-dir: frontend/build/
+          # opcional: zera antes de enviar (evita sobrar lixo)
+          dangerous-clean-slate: true
+          exclude: |
+            **/.git*
+            **/.github*
+            **/node_modules/**
+            **/.DS_Store
