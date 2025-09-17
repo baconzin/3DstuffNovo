@@ -1,4 +1,4 @@
-name: Deploy 3Dstuff to HostGator
+name: build-and-deploy
 
 on:
   push:
@@ -6,64 +6,58 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Só configura Node se houver package.json na RAIZ
+      # Se existir package.json, instala e executa o build
       - name: Setup Node
-        if: ${{ hashFiles('package.json') != '' }}
+        if: hashFiles('package.json') != ''
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      # Só instala deps se houver package.json na RAIZ
       - name: Install deps (lockfile-aware)
-        if: ${{ hashFiles('package.json') != '' }}
+        if: hashFiles('package.json') != ''
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --legacy-peer-deps
           else
-            npm install --no-fund --no-audit
+            npm install --legacy-peer-deps
           fi
 
-      # Só roda build se existir script "build"
       - name: Build (if script exists)
-        if: ${{ hashFiles('package.json') != '' }}
+        if: hashFiles('package.json') != ''
         run: |
           if npm run | grep -q " build"; then
             npm run build
-          else
-            echo "Sem script de build. Pulando etapa."
           fi
 
-      # Descobre pasta de saída: dist > build > raiz
+      # Decide qual pasta subir
       - name: Detect output dir
-        id: out
         run: |
           if [ -d dist ]; then
-            echo "dir=dist" >> $GITHUB_OUTPUT
+            echo "UPLOAD_DIR=dist" >> $GITHUB_ENV
           elif [ -d build ]; then
-            echo "dir=build" >> $GITHUB_OUTPUT
+            echo "UPLOAD_DIR=build" >> $GITHUB_ENV
           else
-            echo "dir=." >> $GITHUB_OUTPUT
+            echo "UPLOAD_DIR=." >> $GITHUB_ENV
           fi
+          echo "Will upload from: $UPLOAD_DIR"
 
-      # Deploy por FTP
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          # Recomendo usar o hostname do servidor para não depender da propagação do DNS
-          server: ${{ secrets.FTP_SERVER }}          # ex.: br150.hostgator.com.br
-          username: ${{ secrets.FTP_USERNAME }}      # ex.: deploy-3dstuff@3dstuff.com.br
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ${{ steps.out.outputs.dir }}/
-          server-dir: /                               # raiz do addon, que mapeia para public_html/3dstuff.com.br
+          local-dir: ${{ env.UPLOAD_DIR }}/
+          server-dir: /
           exclude: |
-            **/.git**
+            **/.git*
             **/.github/**
             **/node_modules/**
             **/.DS_Store
