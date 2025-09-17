@@ -8,35 +8,42 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Use Node 18 + cache Yarn
+      # Node 18, sem cache (não precisa de yarn.lock)
+      - name: Use Node 18
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
 
-      - name: Install deps (yarn)
-        run: yarn install --frozen-lockfile
+      # Instala as deps do projeto que está em /frontend
+      - name: Install deps (frontend)
+        working-directory: frontend
+        run: |
+          yarn install --frozen-lockfile || yarn install
 
-      - name: Build (CRACO/CRA)
+      # Build (CRACO/CRA) – saída vai para frontend/build/
+      - name: Build (frontend)
+        working-directory: frontend
         run: yarn build
 
-      - name: Deploy via FTP
+      # Deploy do conteúdo de frontend/build/ para a pasta do site no HostGator
+      - name: Deploy via FTP (FTPS)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server:   ${{ secrets.FTP_SERVER }}        # ex: ftp.regulariza.agr.br
-          username: ${{ secrets.FTP_USERNAME }}      # ex: deploy-3dstuff@3dstuff.com.br
-          password: ${{ secrets.FTP_PASSWORD }}
+          server:   ${{ secrets.FTP_SERVER }}      # ex.: ftp.regulariza.agr.br
+          username: ${{ secrets.FTP_USERNAME }}    # ex.: deploy-3dstuff@3dstuff.com.br
+          password: ${{ secrets.FTP_PASSWORD }}    # sua senha
           protocol: ftps
           port: 21
-          # como defini 'working-directory: frontend', 'build/' já aponta para frontend/build
-          local-dir: build/
-          server-dir: /public_html/3dstuff.com.br/
+          local-dir: frontend/build/               # o que foi gerado no build
+          server-dir: /public_html/3dstuff.com.br/ # pasta pública do domínio
+          state-name: .ftp-deploy-sync-state.json
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            **/.ftp-deploy-sync-state.json
