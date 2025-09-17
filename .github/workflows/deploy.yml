@@ -6,21 +6,31 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node (sem cache)
+      - name: Setup Node (LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
-      # Detecta gerenciador de pacotes
+      # Descobre a pasta do projeto
+      - name: Resolve project dir
+        id: proj
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "dir=frontend" >> $GITHUB_OUTPUT
+          else
+            echo "dir=." >> $GITHUB_OUTPUT
+          fi
+          echo "Project dir: $(cat $GITHUB_OUTPUT || true)"
+
+      # Detecta gerenciador de pacotes (na PASTA certa)
       - name: Detect package manager
         id: pm
-        working-directory: frontend
         run: |
+          cd "${{ steps.proj.outputs.dir }}"
           if [ -f yarn.lock ]; then
             echo "pm=yarn" >> $GITHUB_OUTPUT
           elif [ -f pnpm-lock.yaml ]; then
@@ -29,20 +39,27 @@ jobs:
             echo "pm=npm" >> $GITHUB_OUTPUT
           fi
 
-      # Instala dependências conforme o PM detectado
+      # npm
       - name: Install deps (npm)
         if: steps.pm.outputs.pm == 'npm'
-        working-directory: frontend
-        run: npm ci || npm i
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --legacy-peer-deps
+          fi
 
+      # yarn
       - name: Install deps (yarn)
         if: steps.pm.outputs.pm == 'yarn'
-        working-directory: frontend
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: yarn install --frozen-lockfile
 
+      # pnpm
       - name: Install deps (pnpm)
         if: steps.pm.outputs.pm == 'pnpm'
-        working-directory: frontend
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: |
           corepack enable
           pnpm install --frozen-lockfile
@@ -50,32 +67,33 @@ jobs:
       # Build
       - name: Build (npm)
         if: steps.pm.outputs.pm == 'npm'
-        working-directory: frontend
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: npm run build
 
       - name: Build (yarn)
         if: steps.pm.outputs.pm == 'yarn'
-        working-directory: frontend
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: yarn build
 
       - name: Build (pnpm)
         if: steps.pm.outputs.pm == 'pnpm'
-        working-directory: frontend
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: pnpm build
 
-      # Descobre qual pasta publicar (dist, build ou public)
+      # Qual pasta publicar?
       - name: Resolve build directory
         id: out
         run: |
-          if [ -d frontend/dist ]; then
-            echo "dir=frontend/dist" >> $GITHUB_OUTPUT
-          elif [ -d frontend/build ]; then
-            echo "dir=frontend/build" >> $GITHUB_OUTPUT
+          BASE="${{ steps.proj.outputs.dir }}"
+          if [ -d "$BASE/dist" ]; then
+            echo "dir=$BASE/dist" >> $GITHUB_OUTPUT
+          elif [ -d "$BASE/build" ]; then
+            echo "dir=$BASE/build" >> $GITHUB_OUTPUT
           else
-            echo "dir=frontend/public" >> $GITHUB_OUTPUT
+            echo "dir=$BASE/public" >> $GITHUB_OUTPUT
           fi
 
-      # Deploy via FTPS
+      # Deploy por FTPS
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
