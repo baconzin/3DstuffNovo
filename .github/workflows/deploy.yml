@@ -2,7 +2,7 @@ name: build-and-deploy
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -13,37 +13,33 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Node 18, sem cache (não precisa de yarn.lock)
-      - name: Use Node 18
+      # Usa Node 20 (necessário para react-router-dom 7.x)
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      # Instala as deps do projeto que está em /frontend
-      - name: Install deps (frontend)
+      # Instala dependências na pasta do frontend
+      - name: Install deps (yarn)
         working-directory: frontend
         run: |
-          yarn install --frozen-lockfile || yarn install
+          yarn install --non-interactive
 
-      # Build (CRACO/CRA) – saída vai para frontend/build/
-      - name: Build (frontend)
+      # Build (usa seu script "craco build")
+      - name: Build (CRACO/CRA)
         working-directory: frontend
-        run: yarn build
+        run: |
+          yarn build
 
-      # Deploy do conteúdo de frontend/build/ para a pasta do site no HostGator
-      - name: Deploy via FTP (FTPS)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      # Faz o deploy dos arquivos gerados em frontend/build para a pasta do domínio no HostGator
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          server:   ${{ secrets.FTP_SERVER }}      # ex.: ftp.regulariza.agr.br
-          username: ${{ secrets.FTP_USERNAME }}    # ex.: deploy-3dstuff@3dstuff.com.br
-          password: ${{ secrets.FTP_PASSWORD }}    # sua senha
-          protocol: ftps
-          port: 21
-          local-dir: frontend/build/               # o que foi gerado no build
-          server-dir: /public_html/3dstuff.com.br/ # pasta pública do domínio
-          state-name: .ftp-deploy-sync-state.json
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/node_modules/**
-            **/.ftp-deploy-sync-state.json
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftp
+          local-dir: frontend/build/
+          server-dir: /public_html/3dstuff.com.br/
+          # cuidado: apaga o que estiver no diretório remoto antes de enviar
+          dangerous-clean-slate: true
