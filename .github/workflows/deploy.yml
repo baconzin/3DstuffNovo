@@ -1,11 +1,13 @@
 name: build-and-deploy
+
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -15,96 +17,26 @@ jobs:
         with:
           node-version: 18
 
-      # Descobre a pasta do projeto
-      - name: Resolve project dir
-        id: proj
-        run: |
-          if [ -f frontend/package.json ]; then
-            echo "dir=frontend" >> $GITHUB_OUTPUT
-          else
-            echo "dir=." >> $GITHUB_OUTPUT
-          fi
-          echo "Project dir: $(cat $GITHUB_OUTPUT || true)"
-
-      # Detecta gerenciador de pacotes (na PASTA certa)
-      - name: Detect package manager
-        id: pm
-        run: |
-          cd "${{ steps.proj.outputs.dir }}"
-          if [ -f yarn.lock ]; then
-            echo "pm=yarn" >> $GITHUB_OUTPUT
-          elif [ -f pnpm-lock.yaml ]; then
-            echo "pm=pnpm" >> $GITHUB_OUTPUT
-          else
-            echo "pm=npm" >> $GITHUB_OUTPUT
-          fi
-
-      # npm
       - name: Install deps (npm)
-        if: steps.pm.outputs.pm == 'npm'
-        working-directory: ${{ steps.proj.outputs.dir }}
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --legacy-peer-deps
-          fi
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
 
-      # yarn
-      - name: Install deps (yarn)
-        if: steps.pm.outputs.pm == 'yarn'
-        working-directory: ${{ steps.proj.outputs.dir }}
-        run: yarn install --frozen-lockfile
-
-      # pnpm
-      - name: Install deps (pnpm)
-        if: steps.pm.outputs.pm == 'pnpm'
-        working-directory: ${{ steps.proj.outputs.dir }}
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-
-      # Build
-      - name: Build (npm)
-        if: steps.pm.outputs.pm == 'npm'
-        working-directory: ${{ steps.proj.outputs.dir }}
+      - name: Build (CRA/CRACO)
+        working-directory: frontend
         run: npm run build
 
-      - name: Build (yarn)
-        if: steps.pm.outputs.pm == 'yarn'
-        working-directory: ${{ steps.proj.outputs.dir }}
-        run: yarn build
-
-      - name: Build (pnpm)
-        if: steps.pm.outputs.pm == 'pnpm'
-        working-directory: ${{ steps.proj.outputs.dir }}
-        run: pnpm build
-
-      # Qual pasta publicar?
-      - name: Resolve build directory
-        id: out
-        run: |
-          BASE="${{ steps.proj.outputs.dir }}"
-          if [ -d "$BASE/dist" ]; then
-            echo "dir=$BASE/dist" >> $GITHUB_OUTPUT
-          elif [ -d "$BASE/build" ]; then
-            echo "dir=$BASE/build" >> $GITHUB_OUTPUT
-          else
-            echo "dir=$BASE/public" >> $GITHUB_OUTPUT
-          fi
-
-      # Deploy por FTPS
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
+          server: ${{ secrets.FTP_SERVER }}        # ex: ftp.regulariza.agr.br
+          username: ${{ secrets.FTP_USERNAME }}    # ex: deploy-3dstuff@3dstuff.com.br
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
+          protocol: ftp
           port: 21
+          local-dir: frontend/build/
           server-dir: public_html/3dstuff.com.br/
-          local-dir: ${{ steps.out.outputs.dir }}
           exclude: |
             **/.git*
-            **/.github/**
+            **/.github*
             **/node_modules/**
+            **/*.map
