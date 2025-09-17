@@ -11,23 +11,72 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node (sem cache)
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install deps
+      # Detecta gerenciador de pacotes
+      - name: Detect package manager
+        id: pm
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ -f yarn.lock ]; then
+            echo "pm=yarn" >> $GITHUB_OUTPUT
+          elif [ -f pnpm-lock.yaml ]; then
+            echo "pm=pnpm" >> $GITHUB_OUTPUT
+          else
+            echo "pm=npm" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Build
+      # Instala dependências conforme o PM detectado
+      - name: Install deps (npm)
+        if: steps.pm.outputs.pm == 'npm'
+        working-directory: frontend
+        run: npm ci || npm i
+
+      - name: Install deps (yarn)
+        if: steps.pm.outputs.pm == 'yarn'
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Install deps (pnpm)
+        if: steps.pm.outputs.pm == 'pnpm'
+        working-directory: frontend
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      # Build
+      - name: Build (npm)
+        if: steps.pm.outputs.pm == 'npm'
         working-directory: frontend
         run: npm run build
 
-      # Se o build gerar "dist" (Vite):
-      - name: Deploy (Vite - dist)
+      - name: Build (yarn)
+        if: steps.pm.outputs.pm == 'yarn'
+        working-directory: frontend
+        run: yarn build
+
+      - name: Build (pnpm)
+        if: steps.pm.outputs.pm == 'pnpm'
+        working-directory: frontend
+        run: pnpm build
+
+      # Descobre qual pasta publicar (dist, build ou public)
+      - name: Resolve build directory
+        id: out
+        run: |
+          if [ -d frontend/dist ]; then
+            echo "dir=frontend/dist" >> $GITHUB_OUTPUT
+          elif [ -d frontend/build ]; then
+            echo "dir=frontend/build" >> $GITHUB_OUTPUT
+          else
+            echo "dir=frontend/public" >> $GITHUB_OUTPUT
+          fi
+
+      # Deploy via FTPS
+      - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -36,24 +85,8 @@ jobs:
           protocol: ftps
           port: 21
           server-dir: public_html/3dstuff.com.br/
-          local-dir: frontend/dist
+          local-dir: ${{ steps.out.outputs.dir }}
           exclude: |
             **/.git*
             **/.github/**
             **/node_modules/**
-
-      # Se for CRA e o build gerar "build", troque o passo acima por este:
-      # - name: Deploy (CRA - build)
-      #   uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-      #   with:
-      #     server: ${{ secrets.FTP_SERVER }}
-      #     username: ${{ secrets.FTP_USERNAME }}
-      #     password: ${{ secrets.FTP_PASSWORD }}
-      #     protocol: ftps
-      #     port: 21
-      #     server-dir: public_html/3dstuff.com.br/
-      #     local-dir: frontend/build
-      #     exclude: |
-      #       **/.git*
-      #       **/.github/**
-      #       **/node_modules/**
