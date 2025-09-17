@@ -2,41 +2,43 @@ name: build-and-deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: frontend   # seu código React está em /frontend
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node (LTS)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+            node-version: 18
 
-      - name: Install deps (npm)
-        working-directory: frontend
-        run: npm install --legacy-peer-deps
+      # use npm install (se não houver package-lock, "npm ci" falha)
+      - name: Install deps
+        run: npm install --no-audit --no-fund
 
       - name: Build (CRA/CRACO)
-        working-directory: frontend
         run: npm run build
 
       - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: SamKirkland/FTP-Deploy-Action@v4
         with:
-          server: ${{ secrets.FTP_SERVER }}        # ex: ftp.regulariza.agr.br
-          username: ${{ secrets.FTP_USERNAME }}    # ex: deploy-3dstuff@3dstuff.com.br
+          server: ${{ secrets.FTP_SERVER }}      # ex: ftp.regulariza.agr.br
+          username: ${{ secrets.FTP_USERNAME }}  # deploy-3dstuff@3dstuff.com.br
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftp
+          protocol: ftps                         # HostGator: FTPS explícito na porta 21
           port: 21
-          local-dir: frontend/build/
-          server-dir: public_html/3dstuff.com.br/
-          exclude: |
-            **/.git*
-            **/.github*
-            **/node_modules/**
-            **/*.map
+          local-dir: frontend/build/             # o build gerado pelo CRA/CRACO
+          server-dir: /                          # raiz da conta FTP (já é public_html/3dstuff.com.br)
+          # se quiser limpar tudo antes de subir (cuidado: apaga arquivos antigos)
+          dangerous-clean-slate: true
+          # se você tiver .htaccess próprio e quiser preservá-lo, descomente:
+          # exclude: |
+          #   **/.htaccess
