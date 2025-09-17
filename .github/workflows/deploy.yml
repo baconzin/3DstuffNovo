@@ -13,25 +13,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Só instala Node se existir package.json
       - name: Setup Node
         if: hashFiles('**/package.json') != ''
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install deps
+      # Se existe lockfile -> npm ci, senão -> npm install
+      - name: Install deps (lockfile-aware)
         if: hashFiles('**/package.json') != ''
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install --no-fund --no-audit
+          fi
 
-      - name: Build
+      # Só tenta build se existir script "build"
+      - name: Build (if script exists)
         if: hashFiles('**/package.json') != ''
         run: |
           if npm run | grep -q " build"; then
             npm run build
           else
-            echo "Não há script de build no package.json"
+            echo "Sem script de build. Pulando etapa."
           fi
 
+      # Descobre pasta de saída padrão
       - name: Detect output dir
         id: out
         run: |
@@ -43,14 +52,15 @@ jobs:
             echo "dir=." >> $GITHUB_OUTPUT
           fi
 
+      # Deploy por FTP
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
+          server: ${{ secrets.FTP_SERVER }}          # ex: br150.hostgator.com.br (recomendo usar o hostname do servidor)
+          username: ${{ secrets.FTP_USERNAME }}      # ex: deploy-3dstuff@3dstuff.com.br
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ${{ steps.out.outputs.dir }}/
-          server-dir: /
+          server-dir: /                               # raiz do addon domain (public_html/3dstuff.com.br)
           exclude: |
             **/.git**
             **/.github/**
