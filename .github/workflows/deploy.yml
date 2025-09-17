@@ -13,23 +13,28 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Node 20 porque react-router-dom 7 exige >= 20
-      - name: Use Node 20 + cache Yarn
+      # Node 20 (react-router-dom 7 exige >=20)
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+          node-version: '20'        # sem cache aqui, pra não gerar o erro do yarn.lock
 
-      - name: Install deps (yarn)
+      - name: Install deps (yarn, com ou sem lockfile)
         working-directory: frontend
+        shell: bash
         run: |
-          yarn install --frozen-lockfile || yarn install
+          corepack enable
+          if [ -f yarn.lock ]; then
+            echo "yarn.lock encontrado -> usando --frozen-lockfile"
+            yarn install --frozen-lockfile
+          else
+            echo "yarn.lock NÃO encontrado -> instalando normalmente"
+            yarn install
+          fi
 
       - name: Build (CRACO/CRA)
         working-directory: frontend
-        run: |
-          yarn build
+        run: yarn build
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -39,6 +44,6 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftp
           port: 21
-          local-dir: frontend/build/               # <- PASTA DE SAÍDA DO BUILD
-          server-dir: /public_html/3dstuff.com.br/ # <- ALVO NO SERVIDOR (sem duplicar!)
-          dangerous-clean-slate: true              # limpa antes de enviar
+          local-dir: frontend/build/               # saída do build do CRA
+          server-dir: /public_html/3dstuff.com.br/ # destino correto no cPanel
+          dangerous-clean-slate: true              # limpa destino antes de enviar
