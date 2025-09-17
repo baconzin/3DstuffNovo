@@ -5,59 +5,54 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Evita dois deploys rodando ao mesmo tempo
+concurrency:
+  group: deploy-3dstuff
+  cancel-in-progress: true
+
 jobs:
-  deploy:
+  ftp-deploy:
     runs-on: ubuntu-latest
+    env:
+      # Se o seu site está na raiz do repositório, deixe "."
+      # Se estiver em outra pasta (ex.: "dist" ou "build"), troque aqui.
+      UPLOAD_DIR: .
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
-
-      # Se existir package.json, instala e executa o build
-      - name: Setup Node
-        if: hashFiles('package.json') != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install deps (lockfile-aware)
-        if: hashFiles('package.json') != ''
-        run: |
-          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci --legacy-peer-deps
-          else
-            npm install --legacy-peer-deps
-          fi
-
-      - name: Build (if script exists)
-        if: hashFiles('package.json') != ''
-        run: |
-          if npm run | grep -q " build"; then
-            npm run build
-          fi
-
-      # Decide qual pasta subir
-      - name: Detect output dir
-        run: |
-          if [ -d dist ]; then
-            echo "UPLOAD_DIR=dist" >> $GITHUB_ENV
-          elif [ -d build ]; then
-            echo "UPLOAD_DIR=build" >> $GITHUB_ENV
-          else
-            echo "UPLOAD_DIR=." >> $GITHUB_ENV
-          fi
-          echo "Will upload from: $UPLOAD_DIR"
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          # SECRETS (configure em Settings > Secrets and variables > Actions)
+          # FTP_SERVER   = br150.hostgator.com.br
+          # FTP_USERNAME = deploy-3dstuff@3dstuff.com.br
+          # FTP_PASSWORD = (sua senha)
+          server:   ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ${{ env.UPLOAD_DIR }}/
+
+          # Deixa explícito que é FTP porta 21
+          protocol: ftp
+          port: 21
+          timeout: 60000
+          passive: true
+
+          # Diretórios
+          local-dir:  ${{ env.UPLOAD_DIR }}/
+          # Como a conta FTP já "cai" em /home1/.../public_html/3dstuff.com.br,
+          # o destino no servidor deve ser a raiz "/"
           server-dir: /
+
+          # Não enviar arquivos desnecessários
           exclude: |
             **/.git*
             **/.github/**
             **/node_modules/**
             **/.DS_Store
+            **/README.md
+            **/LICENSE
