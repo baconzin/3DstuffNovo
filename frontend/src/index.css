@@ -84,3 +84,16 @@ code {
     @apply bg-background text-foreground;
     }
 }
+/* Remover "Made with Emergent" (badge/crédito) */
+a[href*="emergent"],
+[class*="emergent"],
+[id*="emergent"],
+[aria-label*="Emergent"],
+[data-emergent],
+emergent-badge,
+.e-badge,
+.e-credit {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
