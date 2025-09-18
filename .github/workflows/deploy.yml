@@ -33,7 +33,10 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: frontend/build
+          # <<<<<< AQUI o / no final resolve o erro
+          local-dir: frontend/build/
+          # se o usuário de FTP já entra em /public_html/3dstuff.com.br,
+          # deixe server-dir como /
           server-dir: /
           dangerous-clean-slate: true
           exclude: |
