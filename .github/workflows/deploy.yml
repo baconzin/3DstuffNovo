@@ -2,8 +2,7 @@ name: Deploy Frontend
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -16,27 +15,26 @@ jobs:
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
       - name: Install deps (yarn)
         working-directory: frontend
-        run: |
-          yarn install --frozen-lockfile || yarn install
+        run: yarn --frozen-lockfile
 
       - name: Build (CRACO/CRA)
         working-directory: frontend
+        env:
+          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL }}
+          REACT_APP_MERCADO_PAGO_PUBLIC_KEY: ${{ secrets.REACT_APP_MP_PUBLIC_KEY }}
         run: yarn build
 
       - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        uses: SamKirkland/FTP-Deploy-Action@v4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          # <<<<<< AQUI o / no final resolve o erro
           local-dir: frontend/build/
-          # se o usuário de FTP já entra em /public_html/3dstuff.com.br,
-          # deixe server-dir como /
           server-dir: /
           dangerous-clean-slate: true
           exclude: |
