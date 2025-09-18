@@ -1,3 +1,4 @@
+// frontend/src/components/Contact.jsx
 import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -11,6 +12,7 @@ function Contact() {
   const { toast } = useToast();
   const [formData, setFormData] = useState({ name: "", email: "", message: "" });
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("idle"); // idle | sending | success | error
 
   const whatsappNumber = "5519971636969";
   const companyEmail = "contato@3dstuff.com.br";
@@ -30,11 +32,13 @@ function Contact() {
         description: "Por favor, preencha todos os campos obrigatórios.",
         variant: "destructive",
       });
+      setStatus("error");
       return;
     }
 
     try {
       setLoading(true);
+      setStatus("sending");
 
       const data = new FormData();
       data.append("name", formData.name);
@@ -57,6 +61,7 @@ function Contact() {
           description: "Recebemos sua mensagem e entraremos em contato em breve.",
         });
         setFormData({ name: "", email: "", message: "" });
+        setStatus("success");
       } else {
         let detail = "Não foi possível enviar sua mensagem.";
         try {
@@ -68,6 +73,7 @@ function Contact() {
           description: detail + " Tente novamente ou fale no WhatsApp.",
           variant: "destructive",
         });
+        setStatus("error");
       }
     } catch (err) {
       console.error("Erro ao enviar mensagem:", err);
@@ -76,6 +82,7 @@ function Contact() {
         description: "Tente novamente ou entre em contato pelo WhatsApp.",
         variant: "destructive",
       });
+      setStatus("error");
     } finally {
       setLoading(false);
     }
@@ -163,10 +170,15 @@ function Contact() {
                   disabled={loading}
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 transition-all duration-200 transform hover:scale-105"
                 >
-                  {loading ? (
+                  {status === "sending" ? (
                     <span className="inline-flex items-center">
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       Enviando...
+                    </span>
+                  ) : status === "success" ? (
+                    <span className="inline-flex items-center">
+                      <Mail className="mr-2 h-5 w-5" />
+                      Enviado!
                     </span>
                   ) : (
                     <span className="inline-flex items-center">
@@ -175,6 +187,13 @@ function Contact() {
                     </span>
                   )}
                 </Button>
+
+                {status === "success" && (
+                  <p className="text-green-600 text-sm">Formulário enviado com sucesso! Obrigado pelo contato.</p>
+                )}
+                {status === "error" && (
+                  <p className="text-red-600 text-sm">Não foi possível enviar. Tente novamente ou fale pelo WhatsApp.</p>
+                )}
               </form>
             </CardContent>
           </Card>
