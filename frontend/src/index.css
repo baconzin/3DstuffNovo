@@ -1,23 +1,9 @@
-/* Tailwind directives devem vir primeiro */
+/* Tailwind deve vir primeiro */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Reset e tipografia base */
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
-    "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
-    "Helvetica Neue", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
-}
-
-/* Variáveis e temas */
+/* Variáveis de tema e resets dentro de um ÚNICO @layer base */
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -73,12 +59,39 @@ code {
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
-}
 
-/* Aplicações globais do tema */
-@layer base {
-  * {
+  /* Reset/typography base */
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+      "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
+      "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* aplica tema */
+    @apply bg-background text-foreground;
+  }
+
+  code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+  }
+
+  /* bordas usam a var de tema */
+  *, *::before, *::after {
     @apply border-border;
   }
-  body {
-    @apply
+}
+
+/* Esconde badge “Made with Emergent” */
+a[href*="emergent"],
+[class*="emergent"],
+[id*="emergent"],
+[aria-label*="Emergent"],
+[data-emergent],
+emergent-badge,
+.e-badge,
+.e-credit {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
