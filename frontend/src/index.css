@@ -1,9 +1,7 @@
-/* Tailwind deve vir primeiro */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Variáveis de tema e resets dentro de um ÚNICO @layer base */
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -60,7 +58,7 @@
     --chart-5: 340 75% 55%;
   }
 
-  /* Reset/typography base */
+  /* base */
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
@@ -68,7 +66,6 @@
       "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* aplica tema */
     @apply bg-background text-foreground;
   }
 
@@ -76,13 +73,12 @@
     font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
   }
 
-  /* bordas usam a var de tema */
   *, *::before, *::after {
     @apply border-border;
   }
 }
 
-/* Esconde badge “Made with Emergent” */
+/* esconder badge emergent */
 a[href*="emergent"],
 [class*="emergent"],
 [id*="emergent"],
