@@ -5,32 +5,28 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { MessageCircle, Mail, MapPin, Phone, Loader2 } from 'lucide-react';
-import { contactAPI } from '../services/api';
+// REMOVIDO: import { contactAPI } from '../services/api';
 import { useToast } from '../hooks/use-toast';
 
 export const Contact = () => {
   const { toast } = useToast();
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    message: ''
-  });
+  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
   const [loading, setLoading] = useState(false);
 
-  const whatsappNumber = "5519971636969"; // Número real do cliente
+  const whatsappNumber = "5519971636969";
   const companyEmail = "contato@3dstuff.com.br";
+
+  // Endpoint do FormSubmit (não exige cadastro)
+  const FORMSUBMIT_ENDPOINT = "https://formsubmit.co/ajax/contato@3dstuff.com.br";
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.email || !formData.message) {
       toast({
         title: "Erro",
@@ -42,30 +38,45 @@ export const Contact = () => {
 
     try {
       setLoading(true);
-      
-      await contactAPI.send({
-        name: formData.name,
-        email: formData.email,
-        message: formData.message
+
+      // FormSubmit (AJAX) aceita JSON
+      const res = await fetch(FORMSUBMIT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          message: formData.message,
+          _subject: "Nova mensagem pelo site 3D Stuff",
+          _captcha: false,           // evita captcha
+          _template: "table",        // e-mail bonitinho
+          source: "3dstuff.com.br"
+        })
       });
 
-      toast({
-        title: "Mensagem enviada!",
-        description: "Recebemos sua mensagem e entraremos em contato em breve.",
-      });
-
-      // Reset form
-      setFormData({
-        name: '',
-        email: '',
-        message: ''
-      });
-
+      if (res.ok) {
+        toast({
+          title: "Mensagem enviada!",
+          description: "Recebemos sua mensagem e entraremos em contato em breve."
+        });
+        setFormData({ name: '', email: '', message: '' });
+      } else {
+        let detail = "Não foi possível enviar sua mensagem.";
+        try {
+          const j = await res.json();
+          if (j?.message) detail = j.message;
+        } catch (_) {}
+        toast({
+          title: "Erro",
+          description: `${detail} Tente novamente ou fale no WhatsApp.`,
+          variant: "destructive"
+        });
+      }
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       toast({
-        title: "Erro",
-        description: "Não foi possível enviar sua mensagem. Tente novamente ou entre em contato pelo WhatsApp.",
+        title: "Erro de conexão",
+        description: "Tente novamente ou entre em contato pelo WhatsApp.",
         variant: "destructive"
       });
     } finally {
@@ -199,45 +210,3 @@ export const Contact = () => {
                 </Button>
               </CardContent>
             </Card>
-
-            <Card className="border-0 shadow-lg">
-              <CardContent className="p-8">
-                <div className="space-y-6">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-                      <Mail className="h-6 w-6 text-blue-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">E-mail</h3>
-                      <p className="text-gray-600">{companyEmail}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-                      <Phone className="h-6 w-6 text-blue-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Telefone</h3>
-                      <p className="text-gray-600">(19) 97163-6969</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-                      <MapPin className="h-6 w-6 text-blue-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Localização</h3>
-                      <p className="text-gray-600">Campinas, SP - Brasil</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
