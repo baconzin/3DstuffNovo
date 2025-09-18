@@ -1,4 +1,3 @@
-// frontend/src/components/PaymentModal.jsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -14,18 +13,21 @@ const PUBLIC_KEY = process.env.REACT_APP_MERCADO_PAGO_PUBLIC_KEY;
 
 export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
   const { toast } = useToast();
+
   const [selectedMethod, setSelectedMethod] = useState('pix'); // 'pix' | 'credit_card' | 'boleto'
   const [isLoading, setIsLoading] = useState(false);
   const [customerData, setCustomerData] = useState({ name: '', email: '', document: '' });
+
   const [paymentResult, setPaymentResult] = useState(null);
   const [qrCode, setQrCode] = useState('');
   const [qrImageBase64, setQrImageBase64] = useState('');
+
   const [installmentOptions, setInstallmentOptions] = useState([]);
   const [selectedInstallments, setSelectedInstallments] = useState(1);
 
   const pollRef = useRef(null);
 
-  // ===== Helpers =====
+  // ========= helpers =========
   function formatBRL(v) {
     const n = typeof v === 'string'
       ? Number(v.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'))
@@ -34,35 +36,33 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
   }
 
   const unitAmount = useMemo(() => {
-    if (!product?.price && product?.price !== 0) return 0;
+    if (product?.price === 0) return 0;
+    if (!product?.price) return 0;
     if (typeof product.price === 'number') return product.price;
-    // tenta parsear strings tipo "R$ 59,90"
     const parsed = Number(String(product.price).replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'));
     return isNaN(parsed) ? 0 : parsed;
   }, [product]);
 
-  // ===== Init Mercado Pago (uma vez) =====
+  // ========= init Mercado Pago =========
   useEffect(() => {
     if (!PUBLIC_KEY) {
-      console.warn('REACT_APP_MERCADO_PAGO_PUBLIC_KEY ausente');
+      console.warn('REACT_APP_MERCADO_PAGO_PUBLIC_KEY não definida — pagamento por cartão não funcionará.');
       return;
     }
     try {
       initMercadoPago(PUBLIC_KEY, { locale: 'pt-BR', advancedFraudPrevention: true });
     } catch (e) {
-      console.error('Falha ao inicializar MP:', e);
+      console.error('Falha ao inicializar Mercado Pago:', e);
     }
   }, []);
 
-  // ===== Carrega parcelamento quando abrir (cartão) =====
+  // ========= abrir modal / carregar parcelamento =========
   useEffect(() => {
     if (isOpen && product) {
-      // tenta carregar parcelamento; se falhar, apenas segue sem travar UI
-      loadInstallmentOptions().catch(() => {});
-    }
-    // cleanup ao fechar: para polling e limpa resultados
-    if (!isOpen) {
-      stopPolling();
+      loadInstallments().catch(() => {});
+    } else {
+      // cleanup ao fechar
+      stopPaymentPolling();
       setPaymentResult(null);
       setQrCode('');
       setQrImageBase64('');
@@ -72,21 +72,22 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, product?.id]);
 
-  async function loadInstallmentOptions() {
+  async function loadInstallments() {
     if (!BACKEND_URL) return;
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/payments/installments/${product.id}`);
-      if (response.data?.success) {
-        setInstallmentOptions(response.data.installment_options || []);
+      const resp = await axios.get(`${BACKEND_URL}/api/payments/installments/${product.id}`);
+      if (resp.data?.success) {
+        setInstallmentOptions(resp.data.installment_options || []);
       } else {
         setInstallmentOptions([]);
       }
-    } catch (error) {
-      console.error('Erro ao carregar parcelamento:', error);
+    } catch (err) {
+      console.error('Erro ao carregar parcelamento:', err);
       setInstallmentOptions([]);
     }
   }
 
+  // ========= validações =========
   function handleInputChange(e) {
     const { name, value } = e.target;
     setCustomerData((prev) => ({ ...prev, [name]: value }));
@@ -110,29 +111,21 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
     return true;
   }
 
-  function assertEnvOrWarn() {
+  function assertEnvOrWarn(method) {
     if (!BACKEND_URL) {
-      toast({
-        title: 'Configuração ausente',
-        description: 'REACT_APP_BACKEND_URL não definida no build.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Configuração ausente', description: 'REACT_APP_BACKEND_URL não definida no build.', variant: 'destructive' });
       return false;
     }
-    if (!PUBLIC_KEY && selectedMethod === 'credit_card') {
-      toast({
-        title: 'Configuração ausente',
-        description: 'REACT_APP_MERCADO_PAGO_PUBLIC_KEY não definida para pagamento por cartão.',
-        variant: 'destructive',
-      });
+    if (method === 'credit_card' && !PUBLIC_KEY) {
+      toast({ title: 'Configuração ausente', description: 'REACT_APP_MERCADO_PAGO_PUBLIC_KEY não definida (cartão).', variant: 'destructive' });
       return false;
     }
     return true;
   }
 
-  // ===== PIX =====
+  // ========= pagamentos =========
   async function handlePixPayment() {
-    if (!validateCustomerData() || !assertEnvOrWarn()) return;
+    if (!validateCustomerData() || !assertEnvOrWarn('pix')) return;
 
     setIsLoading(true);
     try {
@@ -145,16 +138,17 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
         payment_method: 'pix',
         amount: unitAmount,
       };
-      const response = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
-      if (response.data?.success) {
-        const d = response.data;
-        setPaymentResult(d);
-        setQrCode(d.qr_code || '');
-        setQrImageBase64(d.qr_base64 || ''); // caso seu backend envie a imagem base64
-        startPaymentPolling(d.payment_id);
+
+      const { data } = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
+
+      if (data?.success) {
+        setPaymentResult(data);
+        setQrCode(data.qr_code || '');
+        setQrImageBase64(data.qr_base64 || '');
+        startPaymentPolling(data.payment_id);
         toast({ title: 'PIX gerado!', description: 'Escaneie o QR Code para pagar.' });
       } else {
-        throw new Error(response.data?.detail || 'Falha ao gerar PIX');
+        throw new Error(data?.detail || 'Falha ao gerar PIX');
       }
     } catch (error) {
       console.error('Erro PIX:', error);
@@ -168,9 +162,8 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
     }
   }
 
-  // ===== Cartão =====
   async function handleCardPayment(formData) {
-    if (!validateCustomerData() || !assertEnvOrWarn()) return;
+    if (!validateCustomerData() || !assertEnvOrWarn('credit_card')) return;
 
     setIsLoading(true);
     try {
@@ -188,26 +181,25 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
         amount: unitAmount,
       };
 
-      const response = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
-      const d = response.data;
+      const { data } = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
 
-      if (d?.success) {
-        setPaymentResult(d);
-        if (d.status === 'approved') {
+      if (data?.success) {
+        setPaymentResult(data);
+        if (data.status === 'approved') {
           toast({ title: 'Pagamento aprovado!', description: 'Seu pagamento foi processado com sucesso.' });
-          onSuccess?.(d);
+          onSuccess?.(data);
           onClose?.();
-        } else if (d.status === 'pending') {
+        } else if (data.status === 'pending') {
           toast({ title: 'Pagamento pendente', description: 'Aguardando confirmação do pagamento.' });
         } else {
           toast({
             title: 'Pagamento rejeitado',
-            description: d?.detail || 'Verifique os dados do cartão e tente novamente.',
+            description: data?.detail || 'Verifique os dados do cartão e tente novamente.',
             variant: 'destructive',
           });
         }
       } else {
-        throw new Error(d?.detail || 'Erro no pagamento');
+        throw new Error(data?.detail || 'Erro no pagamento');
       }
     } catch (error) {
       console.error('Erro cartão:', error);
@@ -221,9 +213,8 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
     }
   }
 
-  // ===== Boleto =====
   async function handleBoletoPayment() {
-    if (!validateCustomerData() || !assertEnvOrWarn()) return;
+    if (!validateCustomerData() || !assertEnvOrWarn('boleto')) return;
 
     setIsLoading(true);
     try {
@@ -236,14 +227,14 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
         payment_method: 'boleto',
         amount: unitAmount,
       };
-      const response = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
-      const d = response.data;
 
-      if (d?.success) {
-        setPaymentResult(d);
+      const { data } = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
+
+      if (data?.success) {
+        setPaymentResult(data);
         toast({ title: 'Boleto gerado!', description: 'Clique no link para visualizar o boleto.' });
       } else {
-        throw new Error(d?.detail || 'Erro ao gerar boleto');
+        throw new Error(data?.detail || 'Erro ao gerar boleto');
       }
     } catch (error) {
       console.error('Erro boleto:', error);
@@ -257,39 +248,38 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
     }
   }
 
-  // ===== Polling =====
+  // ========= polling =========
   function startPaymentPolling(paymentId) {
-    stopPolling();
+    stopPaymentPolling();
     pollRef.current = setInterval(async () => {
       try {
-        const response = await axios.get(`${BACKEND_URL}/api/payments/${paymentId}/status`);
-        const status = response.data?.status;
+        const { data } = await axios.get(`${BACKEND_URL}/api/payments/${paymentId}/status`);
+        const status = data?.status;
         if (status === 'approved') {
-          stopPolling();
+          stopPaymentPolling();
           toast({ title: 'Pagamento aprovado!', description: 'PIX confirmado com sucesso!' });
-          onSuccess?.(response.data);
+          onSuccess?.(data);
           onClose?.();
         }
       } catch (error) {
         console.error('Erro no polling:', error);
       }
     }, 3000);
-    // safety timeout 10 min
-    setTimeout(() => stopPolling(), 600000);
+
+    // safety timeout: 10 minutos
+    setTimeout(() => stopPaymentPolling(), 10 * 60 * 1000);
   }
 
-  function stopPolling() {
+  function stopPaymentPolling() {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
   }
 
-  useEffect(() => {
-    return () => stopPolling();
-  }, []);
+  useEffect(() => () => stopPaymentPolling(), []);
 
-  // ===== Render =====
+  // ========= render =========
   if (!isOpen || !product) return null;
 
   return (
@@ -313,11 +303,7 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center space-x-4">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="w-16 h-16 object-cover rounded-lg"
-                    />
+                    <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded-lg" />
                     <div className="flex-1">
                       <h3 className="font-semibold">{product.name}</h3>
                       <p className="text-gray-600 text-sm">{product.description}</p>
@@ -436,7 +422,7 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                         <div className="text-center">
                           <div className="mb-4 p-4 rounded-lg border">
                             <p className="text-lg font-semibold mb-2">PIX QR Code</p>
-                            <p className="text-sm text-gray-600">Escaneie com seu app do banco</p>
+                            <p className="text-sm text-gray-600">Use seu app do banco para escanear</p>
                             {qrImageBase64 ? (
                               <img
                                 src={`data:image/png;base64,${qrImageBase64}`}
@@ -475,10 +461,9 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                             className="w-full p-2 border rounded"
                             disabled={isLoading}
                           >
-                            {installmentOptions.map((option) => (
-                              <option key={option.installments} value={option.installments}>
-                                {option.recommended_message ||
-                                  `${option.installments}x de ${formatBRL(option.installment_amount)}`}
+                            {installmentOptions.map((opt) => (
+                              <option key={opt.installments} value={opt.installments}>
+                                {opt.recommended_message || `${opt.installments}x de ${formatBRL(opt.installment_amount)}`}
                               </option>
                             ))}
                           </select>
@@ -497,11 +482,7 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                         onReady={() => console.log('Card payment ready')}
                         onError={(error) => {
                           console.error('Card payment error:', error);
-                          toast({
-                            title: 'Erro',
-                            description: 'Erro no formulário do cartão',
-                            variant: 'destructive',
-                          });
+                          toast({ title: 'Erro', description: 'Erro no formulário do cartão', variant: 'destructive' });
                         }}
                       />
                     </div>
@@ -530,9 +511,7 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                         </div>
                       ) : (
                         <div className="text-center">
-                          <p className="text-green-600 font-semibold mb-4">
-                            Boleto gerado com sucesso!
-                          </p>
+                          <p className="text-green-600 font-semibold mb-4">Boleto gerado com sucesso!</p>
                           <Button
                             onClick={() => window.open(paymentResult.ticket_url, '_blank')}
                             className="bg-blue-500 hover:bg-blue-600"
