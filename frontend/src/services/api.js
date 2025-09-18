@@ -65,3 +65,37 @@ export const healthAPI = {
 };
 
 export default apiClient;
+
+// ...mantenha o que já existe (axios apiClient etc.)
+
+export const productsAPI = {
+  getAll: async (category = 'Todos') => {
+    try {
+      const params = category && category !== 'Todos' ? { category } : {};
+      const response = await apiClient.get('/products', { params });
+      return response.data;
+    } catch (e) {
+      // Fallback para JSON estático
+      const res = await fetch('/data/products.json', { cache: 'no-store' });
+      const list = await res.json();
+      const filtered =
+        category && category !== 'Todos'
+          ? list.filter((p) => (p.category || '').toLowerCase() === category.toLowerCase())
+          : list;
+      return filtered.map((p) => ({ ...p, price: Number(p.price) }));
+    }
+  },
+
+  getById: async (id) => {
+    try {
+      const response = await apiClient.get(`/products/${id}`);
+      return response.data;
+    } catch {
+      const res = await fetch('/data/products.json', { cache: 'no-store' });
+      const list = await res.json();
+      const p = list.find((x) => String(x.id) === String(id));
+      if (!p) throw new Error('Produto não encontrado');
+      return { ...p, price: Number(p.price) };
+    }
+  },
+};
