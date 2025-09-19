@@ -3,105 +3,132 @@ name: Manage Products (no-terminal)
 on:
   workflow_dispatch:
     inputs:
-      action:
-        description: "Ação"
+      op:
+        description: "Operação"
         required: true
         type: choice
-        options: [add, list, stock_set, stock_add, stock_sub, remove, update, import]
+        options: [add, remove, list]
         default: add
-      name:
-        description: "Nome (para add)"
-        required: false
-      price:
-        description: "Preço (ex: 59.9 ou R$ 59,90) (para add/update)"
-        required: false
-      category:
-        description: "Categoria (para add/list)"
-        required: false
-      image:
-        description: "Imagem pública (ex: /products/arquivo.jpg) (para add)"
-        required: false
-      description:
-        description: "Descrição (para add)"
-        required: false
-      stock:
-        description: "Estoque (para add/stock_set/stock_add/stock_sub)"
-        required: false
-      buy_url:
-        description: "buyUrl (MP/WhatsApp) (para add)"
-        required: false
       id:
-        description: "ID do produto (para stock/remove/update)"
+        description: "ID do produto (obrigatório p/ add/remove)"
         required: false
-      set_fields:
-        description: 'Campos update (ex: name="Vaso",price=69.9,active=true)'
+        type: string
+      name:
+        description: "Nome (add)"
         required: false
-      import_file_path:
-        description: "Caminho do JSON no repo (para import), ex: backend/produtos.json"
+        type: string
+      price:
+        description: "Preço em BRL (ex: 59.9) (add)"
         required: false
+        type: string
+      category:
+        description: "Categoria (add)"
+        required: false
+        type: string
+      image:
+        description: "URL da imagem (add)"
+        required: false
+        type: string
+      description:
+        description: "Descrição (add)"
+        required: false
+        type: string
+      buyUrl:
+        description: "URL de compra (WhatsApp ou checkout) (add)"
+        required: false
+        type: string
+      stock:
+        description: "Estoque (número) (add)"
+        required: false
+        type: string
 
 jobs:
-  run:
+  manage:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write  # permite commitar com GITHUB_TOKEN
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install deps
+      - name: Ensure products file exists
         run: |
-          python -m pip install --upgrade pip
-          pip install requests pymongo
-
-      - name: Show inputs
-        run: |
-          echo "Action: ${{ github.event.inputs.action }}"
-          echo "Name: ${{ github.event.inputs.name }}"
-          echo "Category: ${{ github.event.inputs.category }}"
-          echo "ID: ${{ github.event.inputs.id }}"
-          echo "Import file: ${{ github.event.inputs.import_file_path }}"
-
-      - name: Run command
-        env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }} # defina em Settings > Secrets > Actions
-          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL }} # opcional
-          MONGO_URL: ${{ secrets.MONGO_URL }} # fallback opcional
-          DB_NAME: ${{ secrets.DB_NAME }}     # fallback opcional
-        run: |
-          set -e
-          ACTION="${{ github.event.inputs.action }}"
-          if [ "$ACTION" = "add" ]; then
-            python backend/add_product_script.py add \
-              --name "${{ github.event.inputs.name }}" \
-              --price "${{ github.event.inputs.price }}" \
-              --category "${{ github.event.inputs.category }}" \
-              --image "${{ github.event.inputs.image }}" \
-              --description "${{ github.event.inputs.description }}" \
-              --stock "${{ github.event.inputs.stock }}" \
-              --buy-url "${{ github.event.inputs.buy_url }}"
-          elif [ "$ACTION" = "list" ]; then
-            if [ -z "${{ github.event.inputs.category }}" ]; then
-              python backend/add_product_script.py list
-            else
-              python backend/add_product_script.py list --category "${{ github.event.inputs.category }}"
-            fi
-          elif [ "$ACTION" = "stock_set" ]; then
-            python backend/add_product_script.py stock --id "${{ github.event.inputs.id }}" --set "${{ github.event.inputs.stock }}"
-          elif [ "$ACTION" = "stock_add" ]; then
-            python backend/add_product_script.py stock --id "${{ github.event.inputs.id }}" --add "${{ github.event.inputs.stock }}"
-          elif [ "$ACTION" = "stock_sub" ]; then
-            python backend/add_product_script.py stock --id "${{ github.event.inputs.id }}" --sub "${{ github.event.inputs.stock }}"
-          elif [ "$ACTION" = "remove" ]; then
-            python backend/add_product_script.py remove --id "${{ github.event.inputs.id }}"
-          elif [ "$ACTION" = "update" ]; then
-            python backend/add_product_script.py update --id "${{ github.event.inputs.id }}" --set-fields "${{ github.event.inputs.set_fields }}"
-          elif [ "$ACTION" = "import" ]; then
-            python backend/add_product_script.py import --file "${{ github.event.inputs.import_file_path }}"
-          else
-            echo "Ação inválida"; exit 1
+          mkdir -p frontend/public/data
+          if [ ! -f frontend/public/data/products.json ]; then
+            echo "[]" > frontend/public/data/products.json
           fi
+
+      - name: Apply operation
+        id: apply
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'frontend/public/data/products.json';
+
+            const op    = core.getInput('op');
+            const id    = core.getInput('id') || '';
+            const name  = core.getInput('name') || '';
+            const price = core.getInput('price') || '';
+            const cat   = core.getInput('category') || '';
+            const img   = core.getInput('image') || '';
+            const desc  = core.getInput('description') || '';
+            const buy   = core.getInput('buyUrl') || '';
+            const stock = core.getInput('stock') || '';
+
+            const raw = fs.readFileSync(path, 'utf8');
+            let list = [];
+            try { list = JSON.parse(raw); } catch { list = []; }
+
+            if (op === 'list') {
+              core.notice(`Produtos atuais: ${list.length}`);
+              core.setOutput('changed', 'false');
+              return;
+            }
+
+            if (!id) core.setFailed('ID é obrigatório para add/remove.');
+
+            if (op === 'remove') {
+              const before = list.length;
+              list = list.filter(p => String(p.id) !== String(id));
+              fs.writeFileSync(path, JSON.stringify(list, null, 2));
+              core.notice(`Removidos: ${before - list.length}`);
+              core.setOutput('changed', 'true');
+              return;
+            }
+
+            if (op === 'add') {
+              // normaliza preço
+              const priceNum = price ? Number(String(price).replace(',', '.')) : 0;
+              const prod = {
+                id,
+                name,
+                price: isNaN(priceNum) ? price : priceNum,
+                image: img,
+                description: desc,
+                category: cat,
+                buyUrl: buy,
+              };
+              if (stock) prod.stock = Number(stock);
+
+              // se já existe, atualiza; senão, insere
+              const idx = list.findIndex(p => String(p.id) === String(id));
+              if (idx >= 0) list[idx] = { ...list[idx], ...prod };
+              else list.push(prod);
+
+              fs.writeFileSync(path, JSON.stringify(list, null, 2));
+              core.notice(`Produto ${idx>=0?'atualizado':'adicionado'}: ${id}`);
+              core.setOutput('changed', 'true');
+              return;
+            }
+
+            core.setFailed(`Operação desconhecida: ${op}`);
+
+      - name: Commit changes
+        if: steps.apply.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend/public/data/products.json
+          git commit -m "chore(products): ${{ github.event.inputs.op }} ${{ github.event.inputs.id }}"
+          git push
