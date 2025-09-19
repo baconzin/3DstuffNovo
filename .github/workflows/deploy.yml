@@ -4,15 +4,14 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'frontend/**'
-      - '.github/workflows/deploy.yml'
-      - 'package.json'
-      - 'yarn.lock'
+      - "frontend/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +32,7 @@ jobs:
         working-directory: frontend
         run: yarn build
 
+      # >>> erro que você viu foi aqui (faltava a / no final)
       - name: Deploy via FTP
         if: success()
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -40,5 +40,5 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: frontend/build
+          local-dir: frontend/build/   # <— precisa da barra final
           server-dir: /
