@@ -1,321 +1,108 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { X, CreditCard, Smartphone, FileText, Loader2 } from 'lucide-react';
-import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
-import axios from 'axios';
-import { useToast } from '../hooks/use-toast';
+import React, { useEffect, useState } from "react";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { X, CreditCard, Smartphone, FileText, Loader2 } from "lucide-react";
+import { initMercadoPago, CardPayment } from "@mercadopago/sdk-react";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const PUBLIC_KEY = process.env.REACT_APP_MERCADO_PAGO_PUBLIC_KEY;
 
 export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
-  const { toast } = useToast();
-
-  const [selectedMethod, setSelectedMethod] = useState('pix'); // 'pix' | 'credit_card' | 'boleto'
+  const [selectedMethod, setSelectedMethod] = useState("pix");
   const [isLoading, setIsLoading] = useState(false);
-  const [customerData, setCustomerData] = useState({ name: '', email: '', document: '' });
+  const [customer, setCustomer] = useState({ name: "", email: "", document: "" });
 
-  const [paymentResult, setPaymentResult] = useState(null);
-  const [qrCode, setQrCode] = useState('');
-  const [qrImageBase64, setQrImageBase64] = useState('');
+  const mpEnabled = Boolean(PUBLIC_KEY);
 
-  const [installmentOptions, setInstallmentOptions] = useState([]);
-  const [selectedInstallments, setSelectedInstallments] = useState(1);
-
-  const pollRef = useRef(null);
-
-  // ========= helpers =========
-  function formatBRL(v) {
-    const n = typeof v === 'string'
-      ? Number(v.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'))
-      : Number(v || 0);
-    return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  }
-
-  const unitAmount = useMemo(() => {
-    if (product?.price === 0) return 0;
-    if (!product?.price) return 0;
-    if (typeof product.price === 'number') return product.price;
-    const parsed = Number(String(product.price).replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'));
-    return isNaN(parsed) ? 0 : parsed;
-  }, [product]);
-
-  // ========= init Mercado Pago =========
   useEffect(() => {
-    if (!PUBLIC_KEY) {
-      console.warn('REACT_APP_MERCADO_PAGO_PUBLIC_KEY não definida — pagamento por cartão não funcionará.');
-      return;
+    if (mpEnabled) {
+      initMercadoPago(PUBLIC_KEY, { locale: "pt-BR", advancedFraudPrevention: true });
     }
-    try {
-      initMercadoPago(PUBLIC_KEY, { locale: 'pt-BR', advancedFraudPrevention: true });
-    } catch (e) {
-      console.error('Falha ao inicializar Mercado Pago:', e);
-    }
-  }, []);
+  }, [mpEnabled]);
 
-  // ========= abrir modal / carregar parcelamento =========
-  useEffect(() => {
-    if (isOpen && product) {
-      loadInstallments().catch(() => {});
-    } else {
-      // cleanup ao fechar
-      stopPaymentPolling();
-      setPaymentResult(null);
-      setQrCode('');
-      setQrImageBase64('');
-      setSelectedMethod('pix');
-      setSelectedInstallments(1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, product?.id]);
-
-  async function loadInstallments() {
-    if (!BACKEND_URL) return;
-    try {
-      const resp = await axios.get(`${BACKEND_URL}/api/payments/installments/${product.id}`);
-      if (resp.data?.success) {
-        setInstallmentOptions(resp.data.installment_options || []);
-      } else {
-        setInstallmentOptions([]);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar parcelamento:', err);
-      setInstallmentOptions([]);
-    }
-  }
-
-  // ========= validações =========
-  function handleInputChange(e) {
-    const { name, value } = e.target;
-    setCustomerData((prev) => ({ ...prev, [name]: value }));
-  }
-
-  function validateCustomerData() {
-    if (!customerData.name || !customerData.email || !customerData.document) {
-      toast({ title: 'Erro', description: 'Preencha todos os campos obrigatórios', variant: 'destructive' });
-      return false;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(customerData.email)) {
-      toast({ title: 'Erro', description: 'Email inválido', variant: 'destructive' });
-      return false;
-    }
-    const doc = customerData.document.replace(/\D/g, '');
-    if (doc.length !== 11 && doc.length !== 14) {
-      toast({ title: 'Erro', description: 'CPF deve ter 11 dígitos ou CNPJ 14 dígitos', variant: 'destructive' });
-      return false;
-    }
-    return true;
-  }
-
-  function assertEnvOrWarn(method) {
-    if (!BACKEND_URL) {
-      toast({ title: 'Configuração ausente', description: 'REACT_APP_BACKEND_URL não definida no build.', variant: 'destructive' });
-      return false;
-    }
-    if (method === 'credit_card' && !PUBLIC_KEY) {
-      toast({ title: 'Configuração ausente', description: 'REACT_APP_MERCADO_PAGO_PUBLIC_KEY não definida (cartão).', variant: 'destructive' });
-      return false;
-    }
-    return true;
-  }
-
-  // ========= pagamentos =========
-  async function handlePixPayment() {
-    if (!validateCustomerData() || !assertEnvOrWarn('pix')) return;
-
-    setIsLoading(true);
-    try {
-      const payload = {
-        product_id: product.id,
-        quantity: 1,
-        customer_email: customerData.email,
-        customer_document: customerData.document.replace(/\D/g, ''),
-        customer_name: customerData.name,
-        payment_method: 'pix',
-        amount: unitAmount,
-      };
-
-      const { data } = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
-
-      if (data?.success) {
-        setPaymentResult(data);
-        setQrCode(data.qr_code || '');
-        setQrImageBase64(data.qr_base64 || '');
-        startPaymentPolling(data.payment_id);
-        toast({ title: 'PIX gerado!', description: 'Escaneie o QR Code para pagar.' });
-      } else {
-        throw new Error(data?.detail || 'Falha ao gerar PIX');
-      }
-    } catch (error) {
-      console.error('Erro PIX:', error);
-      toast({
-        title: 'Erro',
-        description: error?.response?.data?.detail || error.message || 'Erro ao gerar PIX',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleCardPayment(formData) {
-    if (!validateCustomerData() || !assertEnvOrWarn('credit_card')) return;
-
-    setIsLoading(true);
-    try {
-      const payload = {
-        product_id: product.id,
-        quantity: 1,
-        customer_email: customerData.email,
-        customer_document: customerData.document.replace(/\D/g, ''),
-        customer_name: customerData.name,
-        payment_method: 'credit_card',
-        installments: selectedInstallments,
-        card_token: formData?.token,
-        payment_method_id: formData?.payment_method_id,
-        issuer_id: formData?.issuer_id,
-        amount: unitAmount,
-      };
-
-      const { data } = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
-
-      if (data?.success) {
-        setPaymentResult(data);
-        if (data.status === 'approved') {
-          toast({ title: 'Pagamento aprovado!', description: 'Seu pagamento foi processado com sucesso.' });
-          onSuccess?.(data);
-          onClose?.();
-        } else if (data.status === 'pending') {
-          toast({ title: 'Pagamento pendente', description: 'Aguardando confirmação do pagamento.' });
-        } else {
-          toast({
-            title: 'Pagamento rejeitado',
-            description: data?.detail || 'Verifique os dados do cartão e tente novamente.',
-            variant: 'destructive',
-          });
-        }
-      } else {
-        throw new Error(data?.detail || 'Erro no pagamento');
-      }
-    } catch (error) {
-      console.error('Erro cartão:', error);
-      toast({
-        title: 'Erro',
-        description: error?.response?.data?.detail || error.message || 'Erro no pagamento',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleBoletoPayment() {
-    if (!validateCustomerData() || !assertEnvOrWarn('boleto')) return;
-
-    setIsLoading(true);
-    try {
-      const payload = {
-        product_id: product.id,
-        quantity: 1,
-        customer_email: customerData.email,
-        customer_document: customerData.document.replace(/\D/g, ''),
-        customer_name: customerData.name,
-        payment_method: 'boleto',
-        amount: unitAmount,
-      };
-
-      const { data } = await axios.post(`${BACKEND_URL}/api/payments/create`, payload);
-
-      if (data?.success) {
-        setPaymentResult(data);
-        toast({ title: 'Boleto gerado!', description: 'Clique no link para visualizar o boleto.' });
-      } else {
-        throw new Error(data?.detail || 'Erro ao gerar boleto');
-      }
-    } catch (error) {
-      console.error('Erro boleto:', error);
-      toast({
-        title: 'Erro',
-        description: error?.response?.data?.detail || error.message || 'Erro ao gerar boleto',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  // ========= polling =========
-  function startPaymentPolling(paymentId) {
-    stopPaymentPolling();
-    pollRef.current = setInterval(async () => {
-      try {
-        const { data } = await axios.get(`${BACKEND_URL}/api/payments/${paymentId}/status`);
-        const status = data?.status;
-        if (status === 'approved') {
-          stopPaymentPolling();
-          toast({ title: 'Pagamento aprovado!', description: 'PIX confirmado com sucesso!' });
-          onSuccess?.(data);
-          onClose?.();
-        }
-      } catch (error) {
-        console.error('Erro no polling:', error);
-      }
-    }, 3000);
-
-    // safety timeout: 10 minutos
-    setTimeout(() => stopPaymentPolling(), 10 * 60 * 1000);
-  }
-
-  function stopPaymentPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }
-
-  useEffect(() => () => stopPaymentPolling(), []);
-
-  // ========= render =========
   if (!isOpen || !product) return null;
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setCustomer((p) => ({ ...p, [name]: value }));
+  };
+
+  const priceNumber =
+    typeof product.price === "number"
+      ? product.price
+      : parseFloat(String(product.price).replace(/[^\d,]/g, "").replace(",", ".") || "0");
+
+  const canUseOnline =
+    mpEnabled && customer.email && customer.name && priceNumber > 0;
+
+  const payWithPix = async () => {
+    setIsLoading(true);
+    try {
+      // aqui você chamaria seu backend para criar o PIX e retornar qr/codigo
+      alert("PIX gerado (mock). Integração direta com backend recomendada.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const payWithBoleto = async () => {
+    setIsLoading(true);
+    try {
+      // idem: gerar boleto via backend e abrir link
+      alert("Boleto gerado (mock). Integração direta com backend recomendada.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const closeAndReset = () => {
+    onClose?.();
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
-          {/* Header */}
+          {/* header */}
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900">Finalizar Compra</h2>
-            <Button variant="ghost" size="sm" onClick={onClose} className="p-2">
+            <Button variant="ghost" size="sm" onClick={closeAndReset} className="p-2">
               <X className="h-6 w-6" />
             </Button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Produto */}
+            {/* resumo */}
             <div>
               <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>Resumo do pedido</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center space-x-4">
-                    <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded-lg" />
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-16 h-16 object-cover rounded-lg"
+                    />
                     <div className="flex-1">
                       <h3 className="font-semibold">{product.name}</h3>
                       <p className="text-gray-600 text-sm">{product.description}</p>
                       <p className="text-2xl font-bold text-blue-600 mt-2">
-                        {formatBRL(unitAmount)}
+                        {typeof product.price === "number"
+                          ? product.price.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })
+                          : String(product.price)}
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Dados do cliente */}
+              {/* dados do cliente */}
               <Card>
                 <CardHeader>
                   <CardTitle>Seus dados</CardTitle>
@@ -326,8 +113,8 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                     <Input
                       id="name"
                       name="name"
-                      value={customerData.name}
-                      onChange={handleInputChange}
+                      value={customer.name}
+                      onChange={handleChange}
                       placeholder="João Silva"
                       disabled={isLoading}
                     />
@@ -338,20 +125,20 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                       id="email"
                       name="email"
                       type="email"
-                      value={customerData.email}
-                      onChange={handleInputChange}
+                      value={customer.email}
+                      onChange={handleChange}
                       placeholder="joao@email.com"
                       disabled={isLoading}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="document">CPF/CNPJ *</Label>
+                    <Label htmlFor="document">CPF/CNPJ</Label>
                     <Input
                       id="document"
                       name="document"
-                      value={customerData.document}
-                      onChange={handleInputChange}
-                      placeholder="123.456.789-00"
+                      value={customer.document}
+                      onChange={handleChange}
+                      placeholder="(opcional)"
                       disabled={isLoading}
                     />
                   </div>
@@ -359,36 +146,41 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
               </Card>
             </div>
 
-            {/* Pagamento */}
+            {/* pagamento */}
             <div>
               <Card>
                 <CardHeader>
                   <CardTitle>Forma de pagamento</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* Tabs */}
-                  <div className="flex space-x-2 mb-6">
+                  <div className="flex gap-2 mb-6">
+                    {mpEnabled && (
+                      <>
+                        <Button
+                          variant={selectedMethod === "pix" ? "default" : "outline"}
+                          onClick={() => setSelectedMethod("pix")}
+                          className="flex-1"
+                          disabled={isLoading}
+                        >
+                          <Smartphone className="mr-2 h-4 w-4" />
+                          PIX
+                        </Button>
+                        <Button
+                          variant={
+                            selectedMethod === "credit_card" ? "default" : "outline"
+                          }
+                          onClick={() => setSelectedMethod("credit_card")}
+                          className="flex-1"
+                          disabled={isLoading}
+                        >
+                          <CreditCard className="mr-2 h-4 w-4" />
+                          Cartão
+                        </Button>
+                      </>
+                    )}
                     <Button
-                      variant={selectedMethod === 'pix' ? 'default' : 'outline'}
-                      onClick={() => setSelectedMethod('pix')}
-                      className="flex-1"
-                      disabled={isLoading}
-                    >
-                      <Smartphone className="mr-2 h-4 w-4" />
-                      PIX
-                    </Button>
-                    <Button
-                      variant={selectedMethod === 'credit_card' ? 'default' : 'outline'}
-                      onClick={() => setSelectedMethod('credit_card')}
-                      className="flex-1"
-                      disabled={isLoading}
-                    >
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Cartão
-                    </Button>
-                    <Button
-                      variant={selectedMethod === 'boleto' ? 'default' : 'outline'}
-                      onClick={() => setSelectedMethod('boleto')}
+                      variant={selectedMethod === "boleto" ? "default" : "outline"}
+                      onClick={() => setSelectedMethod("boleto")}
                       className="flex-1"
                       disabled={isLoading}
                     >
@@ -398,128 +190,79 @@ export const PaymentModal = ({ product, isOpen, onClose, onSuccess }) => {
                   </div>
 
                   {/* PIX */}
-                  {selectedMethod === 'pix' && (
-                    <div>
-                      {!paymentResult ? (
-                        <div className="text-center">
-                          <p className="text-gray-600 mb-4">Pagamento instantâneo via PIX</p>
-                          <Button
-                            onClick={handlePixPayment}
-                            disabled={isLoading}
-                            className="bg-orange-500 hover:bg-orange-600"
-                          >
-                            {isLoading ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Gerando PIX...
-                              </>
-                            ) : (
-                              'Gerar PIX'
-                            )}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="text-center">
-                          <div className="mb-4 p-4 rounded-lg border">
-                            <p className="text-lg font-semibold mb-2">PIX QR Code</p>
-                            <p className="text-sm text-gray-600">Use seu app do banco para escanear</p>
-                            {qrImageBase64 ? (
-                              <img
-                                src={`data:image/png;base64,${qrImageBase64}`}
-                                alt="QR Code PIX"
-                                className="mx-auto mt-3 w-52 h-52 object-contain"
-                              />
-                            ) : null}
-                          </div>
-                          <p className="text-sm text-gray-600 mb-2">Ou copie o código:</p>
-                          <div className="bg-gray-100 p-3 rounded mb-4 text-left">
-                            <code className="text-xs break-all">{qrCode}</code>
-                          </div>
-                          <Button
-                            onClick={() => {
-                              navigator.clipboard.writeText(qrCode);
-                              toast({ title: 'Copiado!', description: 'Código PIX copiado.' });
-                            }}
-                            variant="outline"
-                          >
-                            Copiar código PIX
-                          </Button>
-                        </div>
+                  {mpEnabled && selectedMethod === "pix" && (
+                    <div className="text-center">
+                      <p className="text-gray-600 mb-4">
+                        Pagamento instantâneo via PIX.
+                      </p>
+                      <Button
+                        onClick={payWithPix}
+                        disabled={isLoading || !canUseOnline}
+                        className="bg-orange-500 hover:bg-orange-600"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Gerando PIX...
+                          </>
+                        ) : (
+                          "Gerar PIX"
+                        )}
+                      </Button>
+                      {!mpEnabled && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          (Defina REACT_APP_MERCADO_PAGO_PUBLIC_KEY para ativar)
+                        </p>
                       )}
                     </div>
                   )}
 
                   {/* Cartão */}
-                  {selectedMethod === 'credit_card' && (
+                  {mpEnabled && selectedMethod === "credit_card" && (
                     <div>
-                      {installmentOptions.length > 0 && (
-                        <div className="mb-4">
-                          <Label>Parcelamento</Label>
-                          <select
-                            value={selectedInstallments}
-                            onChange={(e) => setSelectedInstallments(parseInt(e.target.value, 10))}
-                            className="w-full p-2 border rounded"
-                            disabled={isLoading}
-                          >
-                            {installmentOptions.map((opt) => (
-                              <option key={opt.installments} value={opt.installments}>
-                                {opt.recommended_message || `${opt.installments}x de ${formatBRL(opt.installment_amount)}`}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
                       <CardPayment
                         initialization={{
-                          amount: unitAmount,
-                          payer: { email: customerData.email || undefined },
+                          amount: priceNumber > 0 ? priceNumber : 1,
+                          payer: { email: customer.email || undefined },
                         }}
                         customization={{
-                          paymentMethods: { creditCard: 'all', debitCard: 'all' },
+                          paymentMethods: { creditCard: "all", debitCard: "all" },
                         }}
-                        onSubmit={handleCardPayment}
-                        onReady={() => console.log('Card payment ready')}
+                        onSubmit={() => {
+                          // normalmente você enviaria os dados ao backend
+                          alert("Pagamento com cartão (mock). Integração via backend.");
+                          onSuccess?.();
+                          closeAndReset();
+                        }}
+                        onReady={() => {}}
                         onError={(error) => {
-                          console.error('Card payment error:', error);
-                          toast({ title: 'Erro', description: 'Erro no formulário do cartão', variant: 'destructive' });
+                          console.error("Card payment error:", error);
+                          alert("Erro no formulário do cartão.");
                         }}
                       />
                     </div>
                   )}
 
                   {/* Boleto */}
-                  {selectedMethod === 'boleto' && (
-                    <div>
-                      {!paymentResult ? (
-                        <div className="text-center">
-                          <p className="text-gray-600 mb-4">Vencimento em 7 dias úteis</p>
-                          <Button
-                            onClick={handleBoletoPayment}
-                            disabled={isLoading}
-                            className="bg-orange-500 hover:bg-orange-600"
-                          >
-                            {isLoading ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Gerando boleto...
-                              </>
-                            ) : (
-                              'Gerar Boleto'
-                            )}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="text-center">
-                          <p className="text-green-600 font-semibold mb-4">Boleto gerado com sucesso!</p>
-                          <Button
-                            onClick={() => window.open(paymentResult.ticket_url, '_blank')}
-                            className="bg-blue-500 hover:bg-blue-600"
-                          >
-                            Visualizar Boleto
-                          </Button>
-                        </div>
-                      )}
+                  {selectedMethod === "boleto" && (
+                    <div className="text-center">
+                      <p className="text-gray-600 mb-4">
+                        Vencimento em 7 dias úteis.
+                      </p>
+                      <Button
+                        onClick={payWithBoleto}
+                        disabled={isLoading}
+                        className="bg-blue-500 hover:bg-blue-600"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Gerando boleto...
+                          </>
+                        ) : (
+                          "Gerar boleto"
+                        )}
+                      </Button>
                     </div>
                   )}
                 </CardContent>
