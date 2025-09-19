@@ -1,101 +1,118 @@
-import axios from 'axios';
+// frontend/src/services/api.js
+import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const BASE_URL = process.env.REACT_APP_BACKEND_URL || "";
 
-// Configuração do axios
-const apiClient = axios.create({
-  baseURL: API,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+// Cliente axios só é útil se houver BASE_URL
+export const apiClient = axios.create({
+  baseURL: BASE_URL || "/api",
+  timeout: 20000,
+  headers: { "Content-Type": "application/json" },
 });
 
-// Interceptor para tratamento de erros
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error('API Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Produtos
+// ========= Produtos =========
 export const productsAPI = {
-  getAll: async (category = null) => {
-    const params = category && category !== 'Todos' ? { category } : {};
-    const response = await apiClient.get('/products', { params });
-    return response.data;
+  async getAll(category = "Todos") {
+    // 1) Tenta backend, se houver URL
+    if (BASE_URL) {
+      try {
+        const params =
+          category && category !== "Todos" ? { category } : undefined;
+        const { data } = await apiClient.get("/products", { params });
+        const list = Array.isArray(data) ? data : data?.items || [];
+        if (list.length) return list;
+      } catch (e) {
+        console.warn("productsAPI: backend falhou; usando JSON estático.", e?.message || e);
+      }
+    }
+
+    // 2) Fallback: JSON estático em /public/data/products.json
+    const res = await fetch("/data/products.json", { cache: "no-store" });
+    const list = await res.json();
+    const filtered =
+      category && category !== "Todos"
+        ? list.filter(
+            (p) =>
+              (p.category || "").toLowerCase() === category.toLowerCase()
+          )
+        : list;
+    // normaliza preço para número quando possível
+    return filtered.map((p) =>
+      typeof p.price === "string"
+        ? { ...p, price: Number(String(p.price).replace(/[^\d,]/g, "").replace(",", ".")) }
+        : p
+    );
   },
-  
-  getById: async (id) => {
-    const response = await apiClient.get(`/products/${id}`);
-    return response.data;
-  }
+
+  async getById(id) {
+    if (BASE_URL) {
+      try {
+        const { data } = await apiClient.get(`/products/${id}`);
+        return data;
+      } catch (e) {
+        console.warn("productsAPI.getById: backend falhou; usando JSON.", e?.message || e);
+      }
+    }
+    const res = await fetch("/data/products.json", { cache: "no-store" });
+    const list = await res.json();
+    const p = list.find((x) => String(x.id) === String(id));
+    if (!p) throw new Error("Produto não encontrado");
+    return p;
+  },
 };
 
-// Contato
+// ========= Contato =========
 export const contactAPI = {
-  send: async (contactData) => {
-    const response = await apiClient.post('/contact', contactData);
-    return response.data;
+  async send(payload) {
+    // Preferência: backend, se existir
+    if (BASE_URL) {
+      try {
+        const { data } = await apiClient.post("/contact", payload);
+        return data;
+      } catch (e) {
+        console.warn("contactAPI: backend falhou; usando FormSubmit.", e?.message || e);
+      }
+    }
+
+    // Fallback com FormSubmit
+    const endpoint = "https://formsubmit.co/ajax/contato@3dstuff.com.br";
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        name: payload.name,
+        email: payload.email,
+        message: payload.message,
+        _subject: "Nova mensagem pelo site 3D Stuff",
+        _captcha: false,
+        _template: "table",
+        source: "3dstuff.com.br",
+      }),
+    });
+    if (!res.ok) throw new Error("Falha no FormSubmit");
+    return res.json();
   },
-  
-  getAll: async () => {
-    const response = await apiClient.get('/contact');
-    return response.data;
-  }
 };
 
-// Informações da empresa
+// ========= Empresa (fallback simples) =========
 export const companyAPI = {
-  getInfo: async () => {
-    const response = await apiClient.get('/company-info');
-    return response.data;
-  }
-};
-
-// Health check
-export const healthAPI = {
-  check: async () => {
-    const response = await apiClient.get('/health');
-    return response.data;
-  }
-};
-
-export default apiClient;
-
-// ...mantenha o que já existe (axios apiClient etc.)
-
-export const productsAPI = {
-  getAll: async (category = 'Todos') => {
-    try {
-      const params = category && category !== 'Todos' ? { category } : {};
-      const response = await apiClient.get('/products', { params });
-      return response.data;
-    } catch (e) {
-      // Fallback para JSON estático
-      const res = await fetch('/data/products.json', { cache: 'no-store' });
-      const list = await res.json();
-      const filtered =
-        category && category !== 'Todos'
-          ? list.filter((p) => (p.category || '').toLowerCase() === category.toLowerCase())
-          : list;
-      return filtered.map((p) => ({ ...p, price: Number(p.price) }));
+  async getInfo() {
+    if (BASE_URL) {
+      try {
+        const { data } = await apiClient.get("/company/info");
+        return data;
+      } catch (e) {
+        console.warn("companyAPI: backend falhou; usando defaults.", e?.message || e);
+      }
     }
-  },
-
-  getById: async (id) => {
-    try {
-      const response = await apiClient.get(`/products/${id}`);
-      return response.data;
-    } catch {
-      const res = await fetch('/data/products.json', { cache: 'no-store' });
-      const list = await res.json();
-      const p = list.find((x) => String(x.id) === String(id));
-      if (!p) throw new Error('Produto não encontrado');
-      return { ...p, price: Number(p.price) };
-    }
+    return {
+      name: "3D Stuff",
+      email: "contato@3dstuff.com.br",
+      social_media: {
+        instagram: "@3dstuff",
+        facebook: "3DStuff",
+        tiktok: "@3dstuff",
+      },
+    };
   },
 };
