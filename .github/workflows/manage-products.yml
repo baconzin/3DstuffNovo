@@ -1,0 +1,107 @@
+name: Manage Products (no-terminal)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Ação"
+        required: true
+        type: choice
+        options: [add, list, stock_set, stock_add, stock_sub, remove, update, import]
+        default: add
+      name:
+        description: "Nome (para add)"
+        required: false
+      price:
+        description: "Preço (ex: 59.9 ou R$ 59,90) (para add/update)"
+        required: false
+      category:
+        description: "Categoria (para add/list)"
+        required: false
+      image:
+        description: "Imagem pública (ex: /products/arquivo.jpg) (para add)"
+        required: false
+      description:
+        description: "Descrição (para add)"
+        required: false
+      stock:
+        description: "Estoque (para add/stock_set/stock_add/stock_sub)"
+        required: false
+      buy_url:
+        description: "buyUrl (MP/WhatsApp) (para add)"
+        required: false
+      id:
+        description: "ID do produto (para stock/remove/update)"
+        required: false
+      set_fields:
+        description: 'Campos update (ex: name="Vaso",price=69.9,active=true)'
+        required: false
+      import_file_path:
+        description: "Caminho do JSON no repo (para import), ex: backend/produtos.json"
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pymongo
+
+      - name: Show inputs
+        run: |
+          echo "Action: ${{ github.event.inputs.action }}"
+          echo "Name: ${{ github.event.inputs.name }}"
+          echo "Category: ${{ github.event.inputs.category }}"
+          echo "ID: ${{ github.event.inputs.id }}"
+          echo "Import file: ${{ github.event.inputs.import_file_path }}"
+
+      - name: Run command
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }} # defina em Settings > Secrets > Actions
+          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL }} # opcional
+          MONGO_URL: ${{ secrets.MONGO_URL }} # fallback opcional
+          DB_NAME: ${{ secrets.DB_NAME }}     # fallback opcional
+        run: |
+          set -e
+          ACTION="${{ github.event.inputs.action }}"
+          if [ "$ACTION" = "add" ]; then
+            python backend/add_product_script.py add \
+              --name "${{ github.event.inputs.name }}" \
+              --price "${{ github.event.inputs.price }}" \
+              --category "${{ github.event.inputs.category }}" \
+              --image "${{ github.event.inputs.image }}" \
+              --description "${{ github.event.inputs.description }}" \
+              --stock "${{ github.event.inputs.stock }}" \
+              --buy-url "${{ github.event.inputs.buy_url }}"
+          elif [ "$ACTION" = "list" ]; then
+            if [ -z "${{ github.event.inputs.category }}" ]; then
+              python backend/add_product_script.py list
+            else
+              python backend/add_product_script.py list --category "${{ github.event.inputs.category }}"
+            fi
+          elif [ "$ACTION" = "stock_set" ]; then
+            python backend/add_product_script.py stock --id "${{ github.event.inputs.id }}" --set "${{ github.event.inputs.stock }}"
+          elif [ "$ACTION" = "stock_add" ]; then
+            python backend/add_product_script.py stock --id "${{ github.event.inputs.id }}" --add "${{ github.event.inputs.stock }}"
+          elif [ "$ACTION" = "stock_sub" ]; then
+            python backend/add_product_script.py stock --id "${{ github.event.inputs.id }}" --sub "${{ github.event.inputs.stock }}"
+          elif [ "$ACTION" = "remove" ]; then
+            python backend/add_product_script.py remove --id "${{ github.event.inputs.id }}"
+          elif [ "$ACTION" = "update" ]; then
+            python backend/add_product_script.py update --id "${{ github.event.inputs.id }}" --set-fields "${{ github.event.inputs.set_fields }}"
+          elif [ "$ACTION" = "import" ]; then
+            python backend/add_product_script.py import --file "${{ github.event.inputs.import_file_path }}"
+          else
+            echo "Ação inválida"; exit 1
+          fi
