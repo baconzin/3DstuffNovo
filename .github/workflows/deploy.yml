@@ -3,6 +3,12 @@ name: Deploy Frontend
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy.yml'
+      - 'package.json'
+      - 'yarn.lock'
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -19,7 +25,10 @@ jobs:
 
       - name: Install deps (yarn)
         working-directory: frontend
-        run: yarn --frozen-lockfile
+        run: |
+          corepack enable
+          yarn --version
+          yarn install --frozen-lockfile
 
       - name: Build (CRACO/CRA)
         working-directory: frontend
@@ -29,16 +38,11 @@ jobs:
         run: yarn build
 
       - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4
+        if: success()
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: frontend/build/
+          local-dir: frontend/build
           server-dir: /
-          dangerous-clean-slate: true
-          exclude: |
-            **/.git*
-            **/.github*
-            **/node_modules/**
-            **/.DS_Store
