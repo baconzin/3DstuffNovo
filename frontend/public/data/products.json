@@ -1,0 +1,29 @@
+[
+  {
+    "id": "grogu-mini",
+    "name": "Miniatura Grogu",
+    "price": 59.9,
+    "image": "/products/grogu-mini.jpg",
+    "description": "Miniatura 3D de 8cm — PLA premium.",
+    "category": "Miniaturas",
+    "buyUrl": "https://wa.me/5519971636969?text=Quero%20a%20Miniatura%20Grogu"
+  },
+  {
+    "id": "vaso-espiral",
+    "name": "Vaso Espiral",
+    "price": 49,
+    "image": "/products/vaso-espiral.jpg",
+    "description": "Vaso decorativo em PLA – várias cores.",
+    "category": "Decoração",
+    "buyUrl": "https://wa.me/5519971636969?text=Quero%20o%20Vaso%20Espiral"
+  },
+  {
+    "id": "suporte-fone",
+    "name": "Suporte para Fone",
+    "price": 74.9,
+    "image": "/products/suporte-fone.jpg",
+    "description": "Design minimalista, super estável.",
+    "category": "Utilitários",
+    "buyUrl": "https://wa.me/5519971636969?text=Quero%20o%20Suporte%20para%20Fone"
+  }
+]
