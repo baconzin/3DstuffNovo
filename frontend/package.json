@@ -83,3 +83,8 @@
   },
   "packageManager": "yarn@1.22.22"
 }
+{
+  "devDependencies": {
+    "eslint-plugin-react-hooks": "^4.6.0"
+  }
+}
