@@ -13,7 +13,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,9 +31,6 @@ jobs:
 
       - name: Build (CRACO/CRA)
         working-directory: frontend
-        env:
-          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL }}
-          REACT_APP_MERCADO_PAGO_PUBLIC_KEY: ${{ secrets.REACT_APP_MP_PUBLIC_KEY }}
         run: yarn build
 
       - name: Deploy via FTP
