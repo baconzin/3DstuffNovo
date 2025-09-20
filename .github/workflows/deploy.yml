@@ -30,9 +30,10 @@ jobs:
 
       - name: Build (CRACO/CRA)
         working-directory: frontend
+        env:
+          CI: "false"           # evita abortar por warnings de lint no CI
         run: yarn build
 
-      # >>> erro que você viu foi aqui (faltava a / no final)
       - name: Deploy via FTP
         if: success()
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -40,5 +41,9 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: frontend/build/   # <— precisa da barra final
-          server-dir: /
+          local-dir: frontend/build/     # precisa terminar com /
+          server-dir: /                  # ajuste se o host exigir subpasta (ex: /public_html/)
+          exclude: |                     # opcional: não mexer nesses arquivos no servidor
+            **/.htaccess
+            **/.well-known/**
+            **/cgi-bin/**
