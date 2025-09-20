@@ -8,9 +8,20 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
+# Evita que 2 deploys rodem ao mesmo tempo para a mesma branch
+concurrency: deploy-frontend-${{ github.ref }}
+
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    # Evita repetir working-directory em todos os "run:"
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - name: Checkout
@@ -21,17 +32,46 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install deps (yarn)
-        working-directory: frontend
+      # Instalação com registry fix + retries
+      - name: Install deps (yarn) com retry e registry fix
+        id: install
         run: |
+          set -e
           corepack enable
           yarn --version
-          yarn install --frozen-lockfile
+
+          # Força registry oficial e aumenta timeout (evita erro "malformed response" do registry)
+          yarn config set registry https://registry.npmjs.org
+          yarn config set "@jest:registry" https://registry.npmjs.org
+          yarn config set network-timeout 600000
+
+          # Até 3 tentativas de install
+          n=0
+          until [ $n -ge 3 ]
+          do
+            echo ">>> yarn install (tentativa $((n+1)) de 3)"
+            yarn install --no-progress --frozen-lockfile && break
+            n=$((n+1))
+            echo "yarn install falhou. Aguardando 10s para tentar de novo..."
+            sleep 10
+          done
+
+          if [ $n -ge 3 ]; then
+            echo "Falha ao instalar dependências com yarn após 3 tentativas."
+            exit 1
+          fi
+
+      # Plano B: se o passo acima falhar por intermitência do registry, tenta npm ci
+      - name: Fallback install com npm
+        if: failure() && steps.install.outcome == 'failure'
+        run: |
+          set -e
+          npm config set registry https://registry.npmjs.org
+          npm ci --legacy-peer-deps
 
       - name: Build (CRACO/CRA)
-        working-directory: frontend
         env:
-          CI: "false"           # evita abortar por warnings de lint no CI
+          CI: "false"   # evita abortar por warnings no CI
         run: yarn build
 
       - name: Deploy via FTP
@@ -42,8 +82,8 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: frontend/build/     # precisa terminar com /
-          server-dir: /                  # ajuste se o host exigir subpasta (ex: /public_html/)
-          exclude: |                     # opcional: não mexer nesses arquivos no servidor
+          server-dir: /                  # ajuste se seu host usar subpasta (ex.: /public_html/)
+          exclude: |
             **/.htaccess
             **/.well-known/**
             **/cgi-bin/**
