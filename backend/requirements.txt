@@ -26,3 +26,4 @@ typer>=0.9.0
 gunicorn==21.2.0
 SQLAlchemy==2.0.32
 mercadopago>=2.2.0,<3
+sendgrid>=6,<7
